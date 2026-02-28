@@ -1006,8 +1006,10 @@ ML팀 - 리스크 평가자 (Risk Assessor)
 
 ```
 각 캐릭터 스프라이트 시트:
-- 크기: 32x32px per frame
-- 공통 프레임:
+- 크기: 32x48px per frame  (가로 32 × 세로 48, 2:3 비율로 자연스러운 인체 비율)
+- 시트 총 크기: 256 × 144px  (가로 8프레임 × 32 / 세로 3행 × 48)
+- PixiJS scale: 2.0  →  화면 표시 크기 64×96px
+- 공통 프레임 (row 0~1):
   - idle: 4프레임 (앉아서 대기, 미세 움직임)
   - typing: 6프레임 (타이핑 모션)
   - reading: 4프레임 (문서 읽기)
@@ -1015,7 +1017,7 @@ ML팀 - 리스크 평가자 (Risk Assessor)
   - walking: 8프레임 (이동, 상하좌우)
   - celebrating: 4프레임 (완료 축하)
   - error: 2프레임 (에러 상태)
-- 역할별 추가 프레임:
+- 역할별 추가 프레임 (row 2):
   - eda_analyzing: 6프레임 (차트 응시 + 고개 끄덕)
   - feature_building: 6프레임 (기어 조립 모션)
   - model_training: 8프레임 (모니터 집중 + GPU LED 깜박)
@@ -1025,6 +1027,48 @@ ML팀 - 리스크 평가자 (Risk Assessor)
   - report_writing: 6프레임 (타이핑 + 문서 합치기 모션)
   - reviewing: 6프레임 (문서 넘기며 빨간 펜 교정)
   - summarizing: 8프레임 (여러 문서 → 하나로 합치기)
+
+가구/소품 스프라이트:
+- 책상·모니터: 32×32px
+- GPU 서버 랙: 32×64px  (캐릭터보다 약간 큼)
+- 배달 서류: 16×16px  (작게 날아다니는 느낌)
+- 바닥 타일: 16×16px
+```
+
+### 7.3 캔버스 & 레이아웃 상수
+
+```typescript
+// office-view/model.ts 에 추가
+export const CANVAS_CONFIG = {
+  // 논리 해상도 (CSS px) — 뷰포트 60% 영역
+  WIDTH: 960,
+  HEIGHT: 640,
+
+  // 캐릭터 스프라이트 원본 크기
+  SPRITE_W: 32,
+  SPRITE_H: 48,
+  CHARACTER_SCALE: 2.0,   // 화면 표시: 64×96px
+
+  // 가구·소품
+  FURNITURE_SIZE: 32,     // 책상·모니터 32×32px
+  GPU_SERVER_H: 64,       // GPU 서버 랙 32×64px
+  DELIVERY_SIZE: 16,      // 배달 서류 16×16px
+
+  // 타일 (바닥·벽 그리드 기준)
+  TILE_SIZE: 16,
+
+  // 팀 방
+  ROOM_W: 260,
+  ROOM_H: 150,
+  ROOM_GAP: 10,           // 방 사이 여백
+  ROOM_PADDING: 12,       // 방 내부 여백
+
+  // 복도 (배달 경로 + ML 현황 패널)
+  CORRIDOR_W: 420,
+
+  // HiDPI 대응 (Retina 등)
+  RESOLUTION: typeof window !== "undefined" ? window.devicePixelRatio : 1,
+} as const;
 ```
 
 ## 8. 반응형 레이아웃

@@ -308,6 +308,57 @@ completed       →  celebrating      →  ✓ 체크 이펙트
 failed          →  troubled         →  ❗ 에러 이펙트
 ```
 
+### 4.3 PixiJS 캔버스 픽셀 스펙
+
+```
+논리 캔버스 해상도:  960 × 640 px  (뷰포트 60% 영역)
+HiDPI 대응:        resolution = window.devicePixelRatio
+
+캐릭터 스프라이트 (32×48 → scale 2.0 → 화면 64×96 px)
+┌────────────┬──────────────┬───────────────────────────────┐
+│ 원본 크기   │ 화면 표시    │ 비고                           │
+├────────────┼──────────────┼───────────────────────────────┤
+│ 32 × 48 px │ 64 × 96 px  │ 캐릭터 (2:3 비율, 인체 비율)   │
+│ 32 × 32 px │ 64 × 64 px  │ 책상·모니터 가구               │
+│ 32 × 64 px │ 64 × 128 px │ GPU 서버 랙                    │
+│ 16 × 16 px │ 32 × 32 px  │ 배달 서류 파티클               │
+│ 16 × 16 px │ 16 × 16 px  │ 바닥 타일 (scale 1.0)         │
+└────────────┴──────────────┴───────────────────────────────┘
+
+스프라이트 시트 구성 (캐릭터 공통):
+  시트 크기: 256 × 144 px
+  row 0: idle 4f / typing 6f / reading 4f
+  row 1: writing 6f / walking 8f / celebrating 4f / error 2f
+  row 2: 역할별 특수 프레임 (6~8프레임)
+
+오피스 레이아웃 좌표:
+  팀 방 크기:    260 × 150 px  (ROOM_W × ROOM_H)
+  방 간 여백:    10 px
+  복도 폭:       420 px
+  팀 방 y 좌표:
+    수집팀:   y =   0
+    분석팀:   y = 160  (150 + 10)
+    ML팀:     y = 320
+    보고서팀: y = 480
+```
+
+```typescript
+// office-view/model.ts — CANVAS_CONFIG 상수 (단일 진실 공급원)
+export const CANVAS_CONFIG = {
+  WIDTH: 960,  HEIGHT: 640,         // 논리 캔버스 크기
+  SPRITE_W: 32,  SPRITE_H: 48,      // 스프라이트 원본
+  CHARACTER_SCALE: 2.0,             // 화면 64×96 px
+  FURNITURE_SIZE: 32,               // 책상·모니터
+  GPU_SERVER_H: 64,                 // GPU 서버 랙 높이
+  DELIVERY_SIZE: 16,                // 배달 서류
+  TILE_SIZE: 16,                    // 바닥 타일
+  ROOM_W: 260,  ROOM_H: 150,        // 팀 방
+  ROOM_GAP: 10,  ROOM_PADDING: 12,
+  CORRIDOR_W: 420,
+  RESOLUTION: typeof window !== "undefined" ? window.devicePixelRatio : 1,
+} as const;
+```
+
 ## 5. MCP (Model Context Protocol) 아키텍처
 
 ```
