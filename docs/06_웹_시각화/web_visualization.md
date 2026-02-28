@@ -33,6 +33,7 @@ web/
 │   │   │   ├── MLModelPanel.tsx     # ML 모델 성능 비교 패널
 │   │   │   ├── BacktestPanel.tsx    # 백테스트 결과 패널
 │   │   │   ├── ExperimentLog.tsx    # MLflow 실험 추적 로그
+│   │   │   ├── ReportPanel.tsx      # 보고서 작성 현황 패널
 │   │   │   ├── TeamStatus.tsx       # 팀 상태 패널
 │   │   │   └── ActivityLog.tsx      # 활동 로그
 │   │   │
@@ -71,6 +72,10 @@ web/
 │       │   ├── feature_engineer.png # 피처 엔지니어 캐릭터
 │       │   ├── ml_engineer.png      # ML 엔지니어 캐릭터
 │       │   ├── backtester.png       # 백테스터 캐릭터
+│       │   ├── report_writer.png   # 종합 리포터 캐릭터
+│       │   ├── invest_memo.png     # 투자 메모 작성자 캐릭터
+│       │   ├── risk_note.png       # 리스크 노트 작성자 캐릭터
+│       │   ├── report_editor.png   # 편집장(총괄) 캐릭터
 │       │   └── delivery.png         # 배달 캐릭터
 │       ├── furniture/               # 가구 & 소품
 │       │   ├── desk.png
@@ -121,6 +126,15 @@ web/
 │  │              │  │                           │             │
 │  │  🤖🤖🤖       │  │                           │             │
 │  │  🧪⚠️         │  │                           │             │
+│  └──────────────┘  │                           │             │
+│                    │  ┌─────────────────────┐  │             │
+│  ┌──────────────┐  │  │   보고서 작성 현황      │  │  • 보고서   │
+│  │  보고서팀 방   │  │  │                     │  │             │
+│  │  Report       │  │  │  종합리포트  ████░ 75%│  │             │
+│  │  Team Room    │  │  │  투자메모   ✅ Done   │  │             │
+│  │              │  │  │  리스크노트  대기중    │  │             │
+│  │  📝📊📋       │  │  │                     │  │             │
+│  │  🧑‍💼          │  │  └─────────────────────┘  │             │
 │  └──────────────┘  │                           │             │
 │                    │                           │             │
 ├────────────────────┴───────────────────────────┴─────────────┤
@@ -184,14 +198,34 @@ ML팀 방 (ML Engineering Team Room)
 │  │트레이너│ │    │ │평가  │       │
 │  └─────┘ └─────┘ └─────┘       │
 │                                 │
-│  ┌─────┐                       │
-│  │ 📝  │ [GPU 서버 랙]          │
-│  │ 🧑‍💻  │  ┌──────────────┐     │
-│  │리포트 │  │ LSTM Epoch 35 │     │  ← 리포트 작성 + GPU 서버
-│  │작성  │  │ Loss: 0.0231  │     │
-│  └─────┘  └──────────────┘     │
+│          [GPU 서버 랙]           │
+│           ┌──────────────┐     │
+│           │ LSTM Epoch 35 │     │  ← GPU 서버
+│           │ Loss: 0.0231  │     │
+│           └──────────────┘     │
 │                                 │
 │  상태: XGBoost 학습 중 Trial 12/30 │
+└─────────────────────────────────┘
+
+보고서팀 방 (Report Team Room)
+┌─────────────────────────────────┐
+│  [보고서팀] Report Team           │
+│                                 │
+│  ┌─────┐ ┌─────┐ ┌─────┐       │
+│  │ 📝  │ │ 📊  │ │ 📋  │       │
+│  │ 🧑‍💼  │ │ 🧑‍💼  │ │ 🧑‍💼  │       │
+│  │종합  │ │투자  │ │리스크 │       │  ← 종합 리포트, 투자 메모, 리스크 노트
+│  │리포터 │ │메모  │ │노트  │       │
+│  └─────┘ └─────┘ └─────┘       │
+│                                 │
+│  ┌─────┐                       │
+│  │ 🧑‍💼  │ [보고서 출력 패널]      │
+│  │편집장 │  ┌──────────────┐     │  ← 종합 편집 + 텔레그램 전송
+│  │(총괄) │  │ 최종 보고서     │     │
+│  └─────┘  │ 전송 대기중...  │     │
+│           └──────────────┘     │
+│                                 │
+│  상태: 종합 리포트 작성 중 ████░ 75% │
 └─────────────────────────────────┘
 ```
 
@@ -216,6 +250,8 @@ export enum CharacterState {
   BACKTESTING = "backtesting",     // 백테스팅 수행 중
   RISK_ASSESSING = "risk_assessing", // 리스크 평가 중 (VaR/Monte Carlo)
   WRITING = "writing",             // 리포트 작성 중
+  REVIEWING = "reviewing",         // 보고서 검토/편집 중
+  SUMMARIZING = "summarizing",     // 종합 요약 작성 중
   DELIVERING = "delivering",       // 서류 배달 중
   CELEBRATING = "celebrating",     // 작업 완료
   ERROR = "error",                 // 에러 발생
@@ -225,7 +261,7 @@ export interface AgentVisual {
   id: string;
   name: string;
   role: string;                    // "eda_analyst" | "feature_engineer" | "model_trainer" 등
-  team: "collection" | "analysis" | "ml_engineering";
+  team: "collection" | "analysis" | "ml_engineering" | "report";
   state: CharacterState;
   position: { x: number; y: number };
   sprite: PIXI.AnimatedSprite;
@@ -390,6 +426,28 @@ function updateAgentAnimation(agent: AgentVisual, tick: number) {
       }
       if (tick % 20 === 0) {
         emitTextParticle(agent); // 텍스트 파티클
+      }
+      break;
+
+    case CharacterState.REVIEWING:
+      // 문서 검토 모션 + 체크/수정 파티클
+      if (tick % 10 === 0) {
+        agent.sprite.currentFrame =
+          (agent.sprite.currentFrame + 1) % agent.sprite.totalFrames;
+      }
+      if (tick % 18 === 0) {
+        emitDataParticle(agent, "reviewing"); // 체크마크/펜 파티클
+      }
+      break;
+
+    case CharacterState.SUMMARIZING:
+      // 종합 요약 모션 + 여러 문서가 하나로 합쳐지는 파티클
+      if (tick % 7 === 0) {
+        agent.sprite.currentFrame =
+          (agent.sprite.currentFrame + 1) % agent.sprite.totalFrames;
+      }
+      if (tick % 12 === 0) {
+        emitDataParticle(agent, "summarizing"); // 문서 수렴 파티클
       }
       break;
 
@@ -569,6 +627,22 @@ const PARTICLE_CONFIGS = {
     direction: "up",
     icon: "📝",
   },
+  reviewing: {
+    color: 0x4A148C,     // 진보라색
+    shape: "checkmark",
+    count: 2,
+    speed: 0.8,
+    direction: "up",
+    icon: "✏️",
+  },
+  summarizing: {
+    color: 0x6A1B9A,     // 보라색
+    shape: "document",
+    count: 3,
+    speed: 1.0,
+    direction: "converge",  // 여러 문서가 중심으로 수렴
+    icon: "📑",
+  },
   celebration: {
     color: 0xFFD700,     // 금색
     shape: "star",
@@ -607,7 +681,7 @@ interface AgentStateMessage {
   payload: {
     agent_id: string;
     role: string;              // "eda_analyst" | "feature_engineer" | "model_trainer" 등
-    team: "collection" | "analysis" | "ml_engineering";
+    team: "collection" | "analysis" | "ml_engineering" | "report";
     state: CharacterState;
     status_text: string;
     progress?: number;         // 0~1
@@ -655,7 +729,7 @@ interface DeliveryMessage {
   payload: {
     from_team: string;
     to_team: string;
-    document_type: "raw_data" | "eda_report" | "features" | "ml_predictions" | "backtest_results" | "risk_report" | "final_report";
+    document_type: "raw_data" | "eda_report" | "features" | "ml_predictions" | "backtest_results" | "risk_report" | "comprehensive_report" | "investment_memo" | "risk_note" | "final_report";
     stock_code: string;
   };
 }
@@ -778,7 +852,21 @@ interface MarketOverviewProps {
 // - Monte Carlo 시뮬레이션 Fan 차트 (VaR/CVaR 밴드)
 ```
 
-### 6.5 팀 상태 패널
+### 6.5 보고서 현황 패널
+
+```typescript
+// dashboard/ReportPanel.tsx
+
+// 보고서팀의 작업 현황을 실시간으로 표시
+// - 보고서 유형별 작성 진행률 (종합리포트, 투자메모, 리스크노트)
+// - 현재 종합 중인 입력 소스 (수집 데이터 ✅, EDA ✅, 피처 ✅, ML 예측 ✅, 백테스트 ⏳)
+// - 편집장 검토 상태 (대기 / 검토중 / 승인 / 반려)
+// - 최종 보고서 미리보기 (요약 텍스트)
+// - 텔레그램 전송 상태 (대기 / 전송중 / 전송완료)
+// - 보고서 히스토리 (과거 발송된 보고서 목록)
+```
+
+### 6.6 팀 상태 패널
 
 ```typescript
 // dashboard/TeamStatus.tsx
@@ -788,13 +876,14 @@ interface MarketOverviewProps {
 // - 각 에이전트 상태와 역할
 //   - 수집팀: 주가수집기, 공시수집기, 뉴스수집기
 //   - 분석팀: EDA분석가, 피처엔지니어, 통계분석가, 감성분석가, 섹터분석가
-//   - ML팀: 모델트레이너, 백테스터, 리스크평가자, 리포트작성자
+//   - ML팀: 모델트레이너, 백테스터, 리스크평가자
+//   - 보고서팀: 종합리포터, 투자메모작성자, 리스크노트작성자, 편집장
 // - 현재 처리 중인 종목
 // - 전체 진행률 바
 // - ML 모델 학습 세부 상태 (Epoch/Trial)
 ```
 
-### 6.6 활동 로그
+### 6.7 활동 로그
 
 ```typescript
 // dashboard/ActivityLog.tsx
@@ -817,9 +906,15 @@ interface MarketOverviewProps {
 // [10:31:30] 🤖 ML팀/모델 - 앙상블 가중치 최적화 완료
 // [10:31:35] 🧪 ML팀/백테스트 - Walk-Forward Validation (5 splits)
 // [10:31:40] ⚠️ ML팀/리스크 - VaR 95% = -2.8%, Monte Carlo 시뮬레이션
-// [10:31:50] 📝 ML팀/리포트 - LLM이 ML 결과를 자연어로 변환 중
-// [10:32:00] ✅ ML팀 - 삼성전자 리포트 작성 완료
-// [10:32:01] 📱 텔레그램으로 리포트 전송 완료
+// [10:31:50] ✅ ML팀 - 삼성전자 ML 분석 완료
+// [10:31:51] 📤 ML팀 → 보고서팀 ML결과 + 백테스트 + 리스크 전달
+// [10:31:52] 📝 보고서팀/종합 - 수집·분석·ML 결과 종합 리포트 작성 시작
+// [10:31:55] 📊 보고서팀/투자메모 - 투자 의견 메모 작성 중 (매수 추천)
+// [10:31:58] ⚠️ 보고서팀/리스크노트 - 리스크 경고 노트 작성 중 (VaR 주의)
+// [10:32:05] ✅ 보고서팀/종합 - 종합 리포트 초안 완료 → 편집장 전달
+// [10:32:10] ✏️ 보고서팀/편집장 - 최종 보고서 검토 및 편집 중
+// [10:32:15] ✅ 보고서팀/편집장 - 최종 보고서 승인 완료
+// [10:32:16] 📱 텔레그램으로 최종 보고서 전송 완료
 ```
 
 ## 7. 캐릭터 디자인 가이드
@@ -869,17 +964,41 @@ ML팀 - 리스크 평가자 (Risk Assessor)
 - 책상 소품: VaR 게이지, Monte Carlo 시뮬레이션 Fan 차트
 - 특수 이펙트: 경고 삼각형이 펄스하며 깜박임
 
-ML팀 - 리포트 작성자 (Report Generator)
+───────────────────────────────────
+
+보고서팀 - 종합 리포터 (Comprehensive Reporter)
 - 색상: 보라 계열 (#9C27B0)
-- 복장: 펜 + 문서
-- 책상 소품: 리포트 템플릿, LLM 대화창
-- 특수 이펙트: 텍스트 파티클이 문서로 모여듦
+- 복장: 펜 + 두꺼운 보고서 바인더
+- 책상 소품: 멀티 모니터 (ML결과+EDA+백테스트 동시 표시), LLM 대화창
+- 특수 이펙트: 여러 색 문서 파티클이 하나로 합쳐지며 보고서 생성
+- 역할: 수집·분석·ML팀의 전체 결과를 종합하여 최종 리포트 작성
+
+보고서팀 - 투자 메모 작성자 (Investment Memo Writer)
+- 색상: 남색 계열 (#1A237E)
+- 복장: 정장 + 금융 차트 클립보드
+- 책상 소품: 종목별 요약 카드, 투자 의견 보드
+- 특수 이펙트: 매수/매도 신호가 텍스트로 변환되는 파티클
+- 역할: ML 예측 + 백테스트 결과를 투자 판단 관점에서 요약
+
+보고서팀 - 리스크 노트 작성자 (Risk Note Writer)
+- 색상: 딥오렌지 계열 (#BF360C)
+- 복장: 경고 배지 + 방패 문서
+- 책상 소품: VaR 요약 화면, 리스크 매트릭스 보드
+- 특수 이펙트: 경고 삼각형이 문서 아이콘으로 변환
+- 역할: 리스크 평가 결과를 경고 수준별로 정리하여 리스크 노트 작성
+
+보고서팀 - 편집장 (Report Editor / Chief)
+- 색상: 금색 계열 (#F9A825)
+- 복장: 편집장 모자 + 빨간 펜
+- 책상 소품: 최종 보고서 미리보기 화면, 텔레그램 전송 버튼
+- 특수 이펙트: 빨간 체크 파티클 (교정) → 금색 완료 파티클 (승인)
+- 역할: 모든 보고서를 최종 검토·편집 후 텔레그램으로 발송
 
 배달 캐릭터 (Delivery)
 - 색상: 주황 계열 (#FF9800)
 - 복장: 서류 봉투 든 모습
 - 경로: 복도를 따라 팀 방 사이를 이동
-- 전달 종류: raw_data, eda_report, features, ml_predictions, backtest_results
+- 전달 종류: raw_data, eda_report, features, ml_predictions, backtest_results, comprehensive_report, investment_memo, risk_note
 - 특수 이펙트: 뒤에 서류 파티클 흩날림 (전달 유형별 색상 다름)
 ```
 
@@ -903,6 +1022,9 @@ ML팀 - 리포트 작성자 (Report Generator)
   - optimizing: 6프레임 (여러 모니터 사이 고개 돌리기)
   - backtesting: 6프레임 (차트 스크롤 모션)
   - risk_checking: 4프레임 (경고 게이지 확인)
+  - report_writing: 6프레임 (타이핑 + 문서 합치기 모션)
+  - reviewing: 6프레임 (문서 넘기며 빨간 펜 교정)
+  - summarizing: 8프레임 (여러 문서 → 하나로 합치기)
 ```
 
 ## 8. 반응형 레이아웃

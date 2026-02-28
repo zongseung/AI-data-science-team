@@ -329,6 +329,7 @@ async def health_check():
         "playwright": await check_playwright(),
         "mlflow": await check_mlflow_connection(),
         "ml_worker": await check_ml_worker_status(),
+        "report_agents": await check_report_agents_status(),  # 보고서팀 상태
         "feature_store": await check_feature_store(),
     }
 
@@ -415,6 +416,12 @@ METRICS = {
     "mlflow_experiments": "MLflow 등록 실험 수",
     "mlflow_registered_models": "MLflow 등록 모델 수",
     "prediction_count": "예측 실행 횟수",
+
+    # 보고서팀 메트릭 ← NEW
+    "report_count": "보고서 생성 횟수",
+    "report_duration": "보고서 작성 소요 시간 (ms)",
+    "report_review_pass_rate": "편집장 검토 통과율 (%)",
+    "report_delivery_count": "텔레그램 발송 완료 횟수",
 
     # LLM 메트릭
     "llm_requests": "LLM API 호출 횟수",
@@ -505,7 +512,17 @@ def setup_scheduler(orchestrator: Orchestrator) -> AsyncIOScheduler:
         id="daily_model_retrain",
     )
 
-    # 일일 리포트 전송 (18:00)
+    # 일일 보고서팀 리포트 작성 & 전송 (17:30)
+    scheduler.add_job(
+        orchestrator.generate_daily_reports,  # 보고서팀이 종합 리포트 작성
+        "cron",
+        hour=17,
+        minute=30,
+        timezone="Asia/Seoul",
+        id="daily_report_generation",
+    )
+
+    # 일일 리포트 전송 (18:00, 편집장 승인 후)
     scheduler.add_job(
         orchestrator.send_daily_reports,
         "cron",

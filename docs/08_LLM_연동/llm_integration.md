@@ -9,10 +9,14 @@
 │  ┌─── LLM 담당 (자연어/해석) ───────────────────────────────┐  │
 │  │  📰 감성 분석 (보조)   │ TF-IDF 결과에 LLM 감성 점수 보정  │  │
 │  │  📝 EDA 인사이트 생성  │ 통계 결과를 자연어로 해석          │  │
-│  │  📊 ML 리포트 작성     │ ML 예측/백테스트 결과 → 자연어 리포트│  │
 │  │  💬 자연어 처리        │ 텔레그램 대화 의도 파악             │  │
 │  │  🤖 에이전트 조율      │ 에이전트 간 커뮤니케이션            │  │
-│  │  ⚠️ 리스크 해석        │ VaR/CVaR 수치를 투자 관점으로 해석  │  │
+│  │                                                          │  │
+│  │  [보고서팀 전담 LLM 활용] ← NEW                           │  │
+│  │  📊 종합 리포트 작성   │ 수집·분석·ML 전체 결과 → 자연어 리포트│  │
+│  │  💰 투자 메모 작성     │ ML 예측+백테스트 → 투자 판단 요약   │  │
+│  │  ⚠️ 리스크 노트 작성   │ VaR/CVaR → 경고 수준별 리스크 정리  │  │
+│  │  ✏️ 편집장 검토        │ 보고서 품질 검증 (수치 정합성, 논리) │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                                                                │
 │  ┌─── ML 담당 (수치 예측) ────────────────────────────────┐  │
@@ -470,6 +474,12 @@ class LLMRouter:
         "ml_report": "advanced",            # Opus / GPT-4o (ML 결과 종합 리포트)
         "risk_interpretation": "advanced",  # 리스크 지표 해석
         "full_report": "advanced",
+
+        # 보고서팀 전용 ← NEW
+        "comprehensive_report": "advanced", # 종합 리포트 (수집·분석·ML 전체 종합)
+        "investment_memo": "advanced",      # 투자 메모 작성
+        "risk_note": "default",             # 리스크 노트 (정형화된 포맷)
+        "report_review": "advanced",        # 편집장 검토 (품질 검증)
     }
 
     def get_model(self, task_type: str) -> str:
@@ -497,6 +507,10 @@ class LLMCache:
         "ml_report": timedelta(hours=6),                # 6시간
         "risk_interpretation": timedelta(hours=4),      # 4시간
         "full_report": timedelta(hours=6),              # 6시간
+        "comprehensive_report": timedelta(hours=6),     # 6시간 (보고서팀)
+        "investment_memo": timedelta(hours=6),          # 6시간 (보고서팀)
+        "risk_note": timedelta(hours=4),                # 4시간 (보고서팀)
+        "report_review": timedelta(minutes=0),          # 캐시 안 함 (보고서팀)
         "intent_classification": timedelta(minutes=0),  # 캐시 안 함
     }
 

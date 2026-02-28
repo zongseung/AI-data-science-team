@@ -32,9 +32,14 @@
 │  │  │ Manager    │  │ Manager    │  │ Manager        │     │    │
 │  │  └─────┬──────┘  └─────┬──────┘  └───────┬────────┘     │    │
 │  │        │               │                  │              │    │
+│  │        │               │          ┌───────────────┐      │    │
+│  │        │               │          │ 보고서팀 매니저  │      │    │
+│  │        │               │          │ Report Manager │      │    │
+│  │        │               │          └──────┬────────┘      │    │
+│  │        │               │                 │               │    │
 │  │   ┌────┴────┐    ┌─────┴─────┐    ┌──────┴──────┐       │    │
 │  │   │ Agents  │    │  Agents   │    │   Agents    │       │    │
-│  │   │ (수집)   │    │ (DS분석)  │    │  (ML예측)   │       │    │
+│  │   │ (수집)   │    │ (DS분석)  │    │(ML예측/보고서)│       │    │
 │  │   └────┬────┘    └─────┬─────┘    └──────┬──────┘       │    │
 │  └────────┼───────────────┼─────────────────┼──────────────┘    │
 │           │               │                 │                   │
@@ -117,13 +122,19 @@ ai_data_science_team/
 │   │   ├── fundamental.py           # 기본적 분석 에이전트
 │   │   ├── sentiment.py             # 감성 분석 에이전트 (LLM)
 │   │   └── sector.py                # 섹터 분석 에이전트
-│   └── forecast/                    # 전망팀
+│   ├── forecast/                    # 전망팀
+│   │   ├── __init__.py
+│   │   ├── manager.py               # 전망팀 매니저
+│   │   ├── short_term.py            # 단기 전망 에이전트
+│   │   ├── mid_long_term.py         # 중장기 전망 에이전트
+│   │   └── risk_assessor.py         # 리스크 평가 에이전트
+│   └── report/                      # 보고서팀 ← NEW
 │       ├── __init__.py
-│       ├── manager.py               # 전망팀 매니저
-│       ├── short_term.py            # 단기 전망 에이전트
-│       ├── mid_long_term.py         # 중장기 전망 에이전트
-│       ├── risk_assessor.py         # 리스크 평가 에이전트
-│       └── report_generator.py      # 리포트 생성 에이전트
+│       ├── manager.py               # 보고서팀 매니저
+│       ├── comprehensive_reporter.py # 종합 리포터 에이전트
+│       ├── investment_memo.py       # 투자 메모 작성 에이전트
+│       ├── risk_note.py             # 리스크 노트 작성 에이전트
+│       └── report_editor.py         # 편집장 에이전트 (최종 검토/발송)
 │
 ├── mcp/                             # MCP (Model Context Protocol) 서버
 │   ├── __init__.py
@@ -212,10 +223,18 @@ ai_data_science_team/
       │                    [전망팀 매니저]
       │                    ├── short_term (1주 전망)
       │                    ├── mid_long_term (1~3개월)
-      │                    ├── risk_assessor (리스크 평가)
-      │                    └── report_generator (리포트 작성)
+      │                    └── risk_assessor (리스크 평가)
       │                              │
       │                    전망 완료 이벤트
+      │                              │
+      │                              ▼
+      │                    [보고서팀 매니저] ← NEW
+      │                    ├── comprehensive_reporter (종합 리포트)
+      │                    ├── investment_memo (투자 메모)
+      │                    ├── risk_note (리스크 노트)
+      │                    └── report_editor (편집장: 최종 검토 & 발송)
+      │                              │
+      │                    보고서 완료 이벤트
       │                              │
       ▼                              ▼
 [텔레그램 응답]              [웹 대시보드 업데이트]
@@ -240,6 +259,13 @@ class EventType(Enum):
     # 전망 이벤트
     FORECAST_STARTED = "forecast.started"
     FORECAST_COMPLETED = "forecast.completed"
+
+    # 보고서 이벤트 ← NEW
+    REPORT_STARTED = "report.started"
+    REPORT_PROGRESS = "report.progress"
+    REPORT_REVIEW = "report.review"        # 편집장 검토 시작
+    REPORT_APPROVED = "report.approved"    # 편집장 승인
+    REPORT_COMPLETED = "report.completed"  # 최종 발송 완료
 
     # 에이전트 이벤트
     AGENT_STATE_CHANGED = "agent.state_changed"
@@ -275,6 +301,8 @@ idle            →  sitting          →  캐릭터 앉아있음
 working         →  collecting       →  타이핑 + 파티클 효과
 working         →  analyzing        →  차트 보는 모션
 working         →  writing          →  문서 작성 모션
+working         →  reviewing        →  보고서 검토/편집 모션
+working         →  summarizing      →  종합 요약 작성 모션
 transferring    →  delivering       →  서류 배달 캐릭터 이동
 completed       →  celebrating      →  ✓ 체크 이펙트
 failed          →  troubled         →  ❗ 에러 이펙트
