@@ -1,6 +1,7 @@
 # AI Financial Data Science Team - PRD (Product Requirements Document)
 
 ## 1. 프로젝트 개요
+- 이 프로젝트는 금융과 데이터싸이언스를 융합한 프로젝트 입니다.
 
 ### 1.1 프로젝트명
 **AI Financial Data Science Team** (AI 금융 데이터 사이언스 팀)
