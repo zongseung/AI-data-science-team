@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-data-science-team"
+version = "0.1.0"
+description = "AI Financial Data Science Team - Korean stock market analysis pipeline"
+requires-python = ">=3.12"
+dependencies = [
+    # Web framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    # Orchestration
+    "prefect>=3.0.0",
+    # HTTP & Scraping
+    "httpx>=0.27.0",
+    "playwright>=1.45.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    # Data
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    # Configuration
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.4.0",
+    "python-dotenv>=1.0.0",
+    # Database
+    "supabase>=2.6.0",
+    # Telegram
+    "python-telegram-bot>=21.0",
+    # Logging
+    "structlog>=24.0.0",
+    "polars>=1.39.3",
+]
+
+[project.optional-dependencies]
+ml = [
+    "scikit-learn>=1.5.0",
+    "xgboost>=2.0.0",
+    "lightgbm>=4.4.0",
+    "prophet>=1.1.0",
+    "torch>=2.3.0",
+    "optuna>=3.6.0",
+    "mlflow>=2.14.0",
+    "statsmodels>=0.14.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.5.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
