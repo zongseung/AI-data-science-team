@@ -1,176 +1,96 @@
-"""Collection flow: orchestrates 4 collectors in parallel with data quality check."""
+"""Collection flow: orchestrates data collection via the CollectionAgent.
 
-import asyncio
-from typing import Any
+Supports multiple data sources through the ``source`` parameter:
+- "krx" (default): runs 4 KRX collectors in parallel + quality check
+- "hyperliquid": fetches crypto candle data from Supabase / REST
+- "all": runs both in parallel
+"""
 
-from prefect import flow, task
+from typing import Any, Literal
 
-from ai_data_science_team.collectors.stock_price_collector import StockPriceCollector
-from ai_data_science_team.collectors.disclosure_collector import DisclosureCollector
-from ai_data_science_team.collectors.news_collector import NewsCollector
-from ai_data_science_team.collectors.market_data_collector import MarketDataCollector
-from ai_data_science_team.collectors.data_quality import DataQualityChecker
-from ai_data_science_team.config.prefect_config import RETRIES, TAGS
-from ai_data_science_team.services.event_bus import EventType, event_bus
+from prefect import flow
 
-
-@task(
-    name="collect_stock_prices",
-    tags=TAGS["collection"],
-    retries=RETRIES["collector"]["retries"],
-    retry_delay_seconds=RETRIES["collector"]["retry_delay_seconds"],
-)
-async def collect_stock_prices(stock_code: str, days: int = 60) -> dict[str, Any]:
-    """Collect stock price data from Naver Finance."""
-    await event_bus.emit(
-        EventType.COLLECTION_PROGRESS,
-        {"step": "stock_prices", "status": "started", "stock_code": stock_code},
-        source="stock_price_collector",
-    )
-    collector = StockPriceCollector()
-    result = await collector.collect(stock_code=stock_code, days=days)
-    await event_bus.emit(
-        EventType.COLLECTION_PROGRESS,
-        {"step": "stock_prices", "status": "completed", "stock_code": stock_code},
-        source="stock_price_collector",
-    )
-    return result
-
-
-@task(
-    name="collect_disclosures",
-    tags=TAGS["collection"],
-    retries=RETRIES["collector"]["retries"],
-    retry_delay_seconds=RETRIES["collector"]["retry_delay_seconds"],
-)
-async def collect_disclosures(
-    stock_code: str, corp_code: str, days: int = 30
-) -> dict[str, Any]:
-    """Collect disclosure data from DART OpenAPI."""
-    await event_bus.emit(
-        EventType.COLLECTION_PROGRESS,
-        {"step": "disclosures", "status": "started", "stock_code": stock_code},
-        source="disclosure_collector",
-    )
-    collector = DisclosureCollector()
-    result = await collector.collect(
-        stock_code=stock_code, corp_code=corp_code, days=days
-    )
-    await event_bus.emit(
-        EventType.COLLECTION_PROGRESS,
-        {"step": "disclosures", "status": "completed", "stock_code": stock_code},
-        source="disclosure_collector",
-    )
-    return result
-
-
-@task(
-    name="collect_news",
-    tags=TAGS["collection"],
-    retries=RETRIES["collector"]["retries"],
-    retry_delay_seconds=RETRIES["collector"]["retry_delay_seconds"],
-)
-async def collect_news(stock_name: str, count: int = 20) -> dict[str, Any]:
-    """Collect news articles from Naver News."""
-    await event_bus.emit(
-        EventType.COLLECTION_PROGRESS,
-        {"step": "news", "status": "started", "stock_name": stock_name},
-        source="news_collector",
-    )
-    collector = NewsCollector()
-    result = await collector.collect(stock_name=stock_name, count=count)
-    await event_bus.emit(
-        EventType.COLLECTION_PROGRESS,
-        {"step": "news", "status": "completed", "stock_name": stock_name},
-        source="news_collector",
-    )
-    return result
-
-
-@task(
-    name="collect_market_data",
-    tags=TAGS["collection"],
-    retries=RETRIES["collector"]["retries"],
-    retry_delay_seconds=RETRIES["collector"]["retry_delay_seconds"],
-)
-async def collect_market_data() -> dict[str, Any]:
-    """Collect broad market data (KOSPI, exchange rate, treasury yield)."""
-    await event_bus.emit(
-        EventType.COLLECTION_PROGRESS,
-        {"step": "market_data", "status": "started"},
-        source="market_data_collector",
-    )
-    collector = MarketDataCollector()
-    result = await collector.collect()
-    await event_bus.emit(
-        EventType.COLLECTION_PROGRESS,
-        {"step": "market_data", "status": "completed"},
-        source="market_data_collector",
-    )
-    return result
-
-
-@task(name="check_data_quality", tags=TAGS["collection"])
-async def check_data_quality(collected_data: dict[str, Any]) -> dict[str, Any]:
-    """Run data quality checks on all collected data."""
-    checker = DataQualityChecker()
-    return checker.check(collected_data)
+from src.collection_service.app.agents.collection_agent import CollectionAgent
+from ai_data_science_team.config.prefect_config import TAGS
+from src.shared.utils.event_bus import EventType, event_bus
 
 
 @flow(name="collection_flow", tags=TAGS["collection"])
 async def collection_flow(
-    stock_code: str,
-    stock_name: str,
-    corp_code: str,
+    stock_code: str = "",
+    stock_name: str = "",
+    corp_code: str = "",
+    source: Literal["krx", "hyperliquid", "all"] = "krx",
+    coins: list[str] | None = None,
+    interval: str = "1h",
+    candle_limit: int = 100,
 ) -> dict[str, Any]:
-    """Main collection flow: runs 4 collectors in parallel, then quality check.
+    """Main collection flow delegating to CollectionAgent.
 
     Args:
-        stock_code: Stock code (e.g., "005930")
-        stock_name: Stock name in Korean (e.g., "삼성전자")
-        corp_code: DART corporation code (e.g., "00126380")
+        stock_code: Stock code (e.g., "005930"). Required when source includes "krx".
+        stock_name: Stock name in Korean (e.g., "삼성전자").
+        corp_code: DART corporation code (e.g., "00126380").
+        source: Data source - "krx", "hyperliquid", or "all".
+        coins: Crypto coin symbols for Hyperliquid collection.
+        interval: Candle interval for Hyperliquid (e.g. "1h").
+        candle_limit: Number of candles to fetch per coin.
 
     Returns:
-        dict with price_data, disclosures, news, market_data, quality_report
+        dict with source-tagged collected data and agent result metadata.
     """
     await event_bus.emit(
         EventType.COLLECTION_STARTED,
-        {"stock_code": stock_code, "stock_name": stock_name},
+        {"stock_code": stock_code, "stock_name": stock_name, "source": source},
         source="collection_flow",
     )
 
-    # Run 4 collectors in parallel
-    price_future = collect_stock_prices.submit(stock_code)
-    disclosure_future = collect_disclosures.submit(stock_code, corp_code)
-    news_future = collect_news.submit(stock_name)
-    market_future = collect_market_data.submit()
+    agent = CollectionAgent()
+    result = await agent.execute(
+        source=source,
+        stock_code=stock_code,
+        stock_name=stock_name,
+        corp_code=corp_code,
+        coins=coins,
+        interval=interval,
+        candle_limit=candle_limit,
+    )
 
-    price_data = await price_future.result()
-    disclosure_data = await disclosure_future.result()
-    news_data = await news_future.result()
-    market_data = await market_future.result()
-
-    # Assemble collected data
-    collected_data = {
-        "stock_code": stock_code,
-        "stock_name": stock_name,
-        "price_data": price_data,
-        "disclosures": disclosure_data,
-        "news": news_data,
-        "market_data": market_data,
+    # Build backward-compatible output
+    output: dict[str, Any] = {
+        "agent_status": result.status,
+        "agent_errors": result.errors,
+        "agent_metadata": result.metadata,
+        "source": source,
     }
 
-    # Sequential: data quality check
-    quality_report = await check_data_quality(collected_data)
-    collected_data["quality_report"] = quality_report
+    # Merge KRX data at the top level for backward compatibility
+    krx_data = result.data.get("krx", {})
+    if krx_data:
+        output["stock_code"] = krx_data.get("stock_code", stock_code)
+        output["stock_name"] = krx_data.get("stock_name", stock_name)
+        output["price_data"] = krx_data.get("price_data")
+        output["disclosures"] = krx_data.get("disclosures")
+        output["news"] = krx_data.get("news")
+        output["market_data"] = krx_data.get("market_data")
+        output["quality_report"] = krx_data.get("quality_report")
+
+    # Attach Hyperliquid data
+    hl_data = result.data.get("hyperliquid")
+    if hl_data:
+        output["hyperliquid"] = hl_data
 
     await event_bus.emit(
         EventType.COLLECTION_COMPLETED,
         {
             "stock_code": stock_code,
-            "quality_status": quality_report["overall_status"],
+            "source": source,
+            "status": result.status,
+            "quality_status": output.get("quality_report", {}).get("overall_status")
+            if isinstance(output.get("quality_report"), dict)
+            else None,
         },
         source="collection_flow",
     )
 
-    return collected_data
+    return output

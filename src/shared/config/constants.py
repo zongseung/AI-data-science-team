@@ -64,3 +64,21 @@ MARKET_DATA_URLS = {
 DEFAULT_COLLECTION_DAYS = 60
 DEFAULT_NEWS_COUNT = 20
 DEFAULT_DISCLOSURE_DAYS = 30
+
+# -------------------------------------------------------------------
+# Crypto / Hyperliquid constants
+# -------------------------------------------------------------------
+
+# 주요 암호화폐 코인 매핑
+CRYPTO_COINS: dict[str, str] = {
+    "BTC": "Bitcoin",
+    "ETH": "Ethereum",
+    "SOL": "Solana",
+    "HYPE": "Hyperliquid",
+}
+
+# 지원하는 캔들 간격
+CRYPTO_INTERVALS: list[str] = ["1m", "5m", "15m", "1h", "4h", "1d"]
+
+# 전체 데이터 소스 목록
+DATA_SOURCES: list[str] = ["krx", "hyperliquid"]

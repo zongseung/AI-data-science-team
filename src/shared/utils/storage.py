@@ -136,6 +136,84 @@ class StorageService:
         )
         return result.data[0] if result.data else None
 
+    # ------------------------------------------------------------------
+    # Hyperliquid / Crypto methods
+    # ------------------------------------------------------------------
+
+    async def get_hyperliquid_candles(
+        self,
+        coin: str,
+        interval: str = "1h",
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Query the hyperliquid_candles table for recent candle data.
+
+        Args:
+            coin: Coin symbol (e.g. "BTC").
+            interval: Candle interval (e.g. "1h", "1d").
+            limit: Maximum number of rows to return (newest first).
+
+        Returns:
+            List of candle dicts ordered by timestamp descending.
+        """
+        try:
+            result = (
+                self.client.table("hyperliquid_candles")
+                .select("*")
+                .eq("coin", coin)
+                .eq("interval", interval)
+                .order("timestamp", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            self.log.info(
+                "get_hyperliquid_candles",
+                coin=coin,
+                interval=interval,
+                count=len(result.data) if result.data else 0,
+            )
+            return result.data or []
+        except Exception as exc:
+            self.log.error(
+                "get_hyperliquid_candles_failed",
+                coin=coin,
+                error=str(exc),
+            )
+            return []
+
+    async def get_latest_crypto_snapshot(
+        self,
+        coins: list[str],
+    ) -> dict[str, dict[str, Any]]:
+        """Get the latest candle per coin as a price snapshot.
+
+        Args:
+            coins: List of coin symbols (e.g. ["BTC", "ETH"]).
+
+        Returns:
+            Dict mapping coin symbol to its latest candle data.
+        """
+        snapshot: dict[str, dict[str, Any]] = {}
+        for coin in coins:
+            try:
+                result = (
+                    self.client.table("hyperliquid_candles")
+                    .select("*")
+                    .eq("coin", coin)
+                    .order("timestamp", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if result.data:
+                    snapshot[coin] = result.data[0]
+            except Exception as exc:
+                self.log.error(
+                    "get_latest_crypto_snapshot_failed",
+                    coin=coin,
+                    error=str(exc),
+                )
+        return snapshot
+
 
 # Global storage instance
 storage = StorageService()

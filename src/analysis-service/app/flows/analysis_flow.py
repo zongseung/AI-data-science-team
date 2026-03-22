@@ -1,17 +1,33 @@
-"""Analysis flow: EDA → Feature Engineering → Statistical Analysis.
+"""Analysis flow: Technical → Fundamental → Sentiment (KRX / Hyperliquid).
 
-Orchestrates analysis agents in a phased approach:
-- Phase 1 (parallel): EDA + Sentiment + Sector analysis
-- Phase 2 (sequential): Feature engineering (needs sentiment results)
-- Phase 3 (sequential): Statistical analysis
+Orchestrates AnalysisAgent inside Prefect tasks.  The ``source`` parameter
+controls which data pipeline is executed:
+
+- "krx"         – Korean equity analysis (technical + fundamental + sentiment)
+- "hyperliquid" – Crypto perpetual analysis (technical + volume + volatility)
+- "all"         – Both sources in parallel
 """
 
-from typing import Any
+from typing import Any, Literal
 
+import structlog
 from prefect import flow, task
 
 from ai_data_science_team.config.prefect_config import RETRIES, TAGS
 from ai_data_science_team.services.event_bus import EventType, event_bus
+from src.analysis_service.app.agents.analysis_agent import AnalysisAgent
+
+logger = structlog.get_logger()
+
+SourceType = Literal["krx", "hyperliquid", "all"]
+
+# Shared agent instance (stateless, safe to reuse across task runs)
+_analysis_agent = AnalysisAgent()
+
+
+# ------------------------------------------------------------------
+# Prefect tasks – thin wrappers that delegate to AnalysisAgent
+# ------------------------------------------------------------------
 
 
 @task(
@@ -20,22 +36,28 @@ from ai_data_science_team.services.event_bus import EventType, event_bus
     retries=RETRIES["agent"]["retries"],
     retry_delay_seconds=RETRIES["agent"]["retry_delay_seconds"],
 )
-async def run_eda(stock_code: str, collected_data: dict[str, Any]) -> dict[str, Any]:
+async def run_eda(
+    symbol: str,
+    collected_data: dict[str, Any],
+    source: SourceType = "krx",
+) -> dict[str, Any]:
     """Run Exploratory Data Analysis on collected data."""
     await event_bus.emit(
         EventType.ANALYSIS_PROGRESS,
-        {"step": "eda", "status": "started", "stock_code": stock_code},
+        {"step": "eda", "status": "started", "symbol": symbol, "source": source},
         source="eda_agent",
     )
-    # TODO: Integrate EDA agent from agents/analysis/
-    result = {
-        "stock_code": stock_code,
-        "status": "pending_implementation",
-        "description": "EDA: descriptive stats, distribution, stationarity, decomposition",
-    }
+
+    if source in ("krx", "all"):
+        result = await _analysis_agent.krx_technical_analysis(symbol, collected_data)
+    else:
+        result = await _analysis_agent.hyperliquid_technical_analysis(
+            symbol, collected_data
+        )
+
     await event_bus.emit(
         EventType.ANALYSIS_PROGRESS,
-        {"step": "eda", "status": "completed", "stock_code": stock_code},
+        {"step": "eda", "status": "completed", "symbol": symbol},
         source="eda_agent",
     )
     return result
@@ -48,23 +70,26 @@ async def run_eda(stock_code: str, collected_data: dict[str, Any]) -> dict[str, 
     retry_delay_seconds=RETRIES["agent"]["retry_delay_seconds"],
 )
 async def run_sentiment_analysis(
-    stock_code: str, news_data: dict[str, Any]
+    symbol: str,
+    news_data: dict[str, Any],
+    source: SourceType = "krx",
 ) -> dict[str, Any]:
-    """Run sentiment analysis on news articles."""
+    """Run sentiment analysis on news articles (KRX only)."""
     await event_bus.emit(
         EventType.ANALYSIS_PROGRESS,
-        {"step": "sentiment", "status": "started", "stock_code": stock_code},
+        {"step": "sentiment", "status": "started", "symbol": symbol},
         source="sentiment_agent",
     )
-    # TODO: Integrate Sentiment agent from agents/analysis/
-    result = {
-        "stock_code": stock_code,
-        "status": "pending_implementation",
-        "description": "Sentiment: TF-IDF + LLM hybrid approach",
-    }
+
+    if source in ("krx", "all"):
+        result = await _analysis_agent.krx_sentiment_analysis(symbol, {"news": news_data})
+    else:
+        # Hyperliquid has no sentiment pipeline yet; return empty stub
+        result = {"overall_sentiment": None, "note": "sentiment not applicable for hyperliquid"}
+
     await event_bus.emit(
         EventType.ANALYSIS_PROGRESS,
-        {"step": "sentiment", "status": "completed", "stock_code": stock_code},
+        {"step": "sentiment", "status": "completed", "symbol": symbol},
         source="sentiment_agent",
     )
     return result
@@ -77,23 +102,25 @@ async def run_sentiment_analysis(
     retry_delay_seconds=RETRIES["agent"]["retry_delay_seconds"],
 )
 async def run_sector_analysis(
-    stock_code: str, market_data: dict[str, Any]
+    symbol: str,
+    market_data: dict[str, Any],
+    source: SourceType = "krx",
 ) -> dict[str, Any]:
-    """Run sector-level analysis and clustering."""
+    """Run sector-level analysis and clustering (KRX) or volume analysis (Hyperliquid)."""
     await event_bus.emit(
         EventType.ANALYSIS_PROGRESS,
-        {"step": "sector", "status": "started", "stock_code": stock_code},
+        {"step": "sector", "status": "started", "symbol": symbol},
         source="sector_agent",
     )
-    # TODO: Integrate Sector agent from agents/analysis/
-    result = {
-        "stock_code": stock_code,
-        "status": "pending_implementation",
-        "description": "Sector: clustering (K-Means, DBSCAN), PCA, t-SNE",
-    }
+
+    if source in ("krx", "all"):
+        result = await _analysis_agent.krx_fundamental_analysis(symbol, {"financials": market_data})
+    else:
+        result = await _analysis_agent.hyperliquid_volume_analysis(symbol, market_data)
+
     await event_bus.emit(
         EventType.ANALYSIS_PROGRESS,
-        {"step": "sector", "status": "completed", "stock_code": stock_code},
+        {"step": "sector", "status": "completed", "symbol": symbol},
         source="sector_agent",
     )
     return result
@@ -106,25 +133,30 @@ async def run_sector_analysis(
     retry_delay_seconds=RETRIES["agent"]["retry_delay_seconds"],
 )
 async def run_feature_engineering(
-    stock_code: str,
+    symbol: str,
     collected_data: dict[str, Any],
     sentiment_result: dict[str, Any],
+    source: SourceType = "krx",
 ) -> dict[str, Any]:
     """Run feature engineering (requires sentiment results for sentiment features)."""
     await event_bus.emit(
         EventType.ANALYSIS_PROGRESS,
-        {"step": "features", "status": "started", "stock_code": stock_code},
+        {"step": "features", "status": "started", "symbol": symbol},
         source="feature_agent",
     )
-    # TODO: Integrate Feature Engineering agent from agents/analysis/
+
+    # TODO: Integrate dedicated feature engineering logic into AnalysisAgent
     result = {
-        "stock_code": stock_code,
+        "symbol": symbol,
+        "source": source,
+        "sentiment_input": sentiment_result,
         "status": "pending_implementation",
         "description": "Features: 50+ technical indicators, sentiment features, fundamentals",
     }
+
     await event_bus.emit(
         EventType.ANALYSIS_PROGRESS,
-        {"step": "features", "status": "completed", "stock_code": stock_code},
+        {"step": "features", "status": "completed", "symbol": symbol},
         source="feature_agent",
     )
     return result
@@ -137,34 +169,75 @@ async def run_feature_engineering(
     retry_delay_seconds=RETRIES["agent"]["retry_delay_seconds"],
 )
 async def run_statistical_analysis(
-    stock_code: str,
+    symbol: str,
     collected_data: dict[str, Any],
     features: dict[str, Any],
+    source: SourceType = "krx",
 ) -> dict[str, Any]:
     """Run statistical analysis (regression, hypothesis testing, Granger causality)."""
     await event_bus.emit(
         EventType.ANALYSIS_PROGRESS,
-        {"step": "statistical", "status": "started", "stock_code": stock_code},
+        {"step": "statistical", "status": "started", "symbol": symbol},
         source="statistical_agent",
     )
-    # TODO: Integrate Statistical agent from agents/analysis/
-    result = {
-        "stock_code": stock_code,
-        "status": "pending_implementation",
-        "description": "Stats: regression, Granger causality, cointegration, GARCH",
-    }
+
+    if source == "hyperliquid":
+        result = await _analysis_agent.hyperliquid_volatility_metrics(
+            symbol, collected_data
+        )
+    else:
+        # TODO: Integrate dedicated statistical analysis into AnalysisAgent
+        result = {
+            "symbol": symbol,
+            "source": source,
+            "features_input": features,
+            "status": "pending_implementation",
+            "description": "Stats: regression, Granger causality, cointegration, GARCH",
+        }
+
     await event_bus.emit(
         EventType.ANALYSIS_PROGRESS,
-        {"step": "statistical", "status": "completed", "stock_code": stock_code},
+        {"step": "statistical", "status": "completed", "symbol": symbol},
         source="statistical_agent",
     )
     return result
+
+
+@task(
+    name="run_full_analysis",
+    tags=TAGS["analysis"],
+    retries=RETRIES["agent"]["retries"],
+    retry_delay_seconds=RETRIES["agent"]["retry_delay_seconds"],
+)
+async def run_full_analysis(
+    symbol: str,
+    collected_data: dict[str, Any],
+    source: SourceType = "krx",
+) -> dict[str, Any]:
+    """Run the full AnalysisAgent pipeline (all steps) via agent.execute()."""
+    agent_result = await _analysis_agent.execute(
+        symbol=symbol,
+        collected_data=collected_data,
+        source=source,
+    )
+    return {
+        "status": agent_result.status,
+        "data": agent_result.data,
+        "errors": agent_result.errors,
+        "metadata": agent_result.metadata,
+    }
+
+
+# ------------------------------------------------------------------
+# Prefect flow
+# ------------------------------------------------------------------
 
 
 @flow(name="analysis_flow", tags=TAGS["analysis"])
 async def analysis_flow(
     stock_code: str,
     collected_data: dict[str, Any],
+    source: SourceType = "krx",
 ) -> dict[str, Any]:
     """Main analysis flow with phased execution.
 
@@ -172,22 +245,27 @@ async def analysis_flow(
     Phase 2 (sequential): Feature Engineering (needs sentiment)
     Phase 3 (sequential): Statistical Analysis (needs features)
 
+    Args:
+        stock_code: KRX stock code or Hyperliquid coin symbol.
+        collected_data: Raw data from the collection phase.
+        source: "krx", "hyperliquid", or "all".
+
     Returns:
         dict with eda, features, statistical, sentiment, sector results
     """
     await event_bus.emit(
         EventType.ANALYSIS_STARTED,
-        {"stock_code": stock_code},
+        {"stock_code": stock_code, "source": source},
         source="analysis_flow",
     )
 
     # Phase 1: Parallel - EDA, Sentiment, Sector
-    eda_future = run_eda.submit(stock_code, collected_data)
+    eda_future = run_eda.submit(stock_code, collected_data, source)
     sentiment_future = run_sentiment_analysis.submit(
-        stock_code, collected_data.get("news", {})
+        stock_code, collected_data.get("news", {}), source
     )
     sector_future = run_sector_analysis.submit(
-        stock_code, collected_data.get("market_data", {})
+        stock_code, collected_data.get("market_data", {}), source
     )
 
     eda_result = await eda_future.result()
@@ -196,16 +274,17 @@ async def analysis_flow(
 
     # Phase 2: Sequential - Feature Engineering (needs sentiment)
     feature_result = await run_feature_engineering(
-        stock_code, collected_data, sentiment_result
+        stock_code, collected_data, sentiment_result, source
     )
 
     # Phase 3: Sequential - Statistical Analysis (needs features)
     statistical_result = await run_statistical_analysis(
-        stock_code, collected_data, feature_result
+        stock_code, collected_data, feature_result, source
     )
 
     result = {
         "stock_code": stock_code,
+        "source": source,
         "eda": eda_result,
         "features": feature_result,
         "statistical": statistical_result,
@@ -215,7 +294,7 @@ async def analysis_flow(
 
     await event_bus.emit(
         EventType.ANALYSIS_COMPLETED,
-        {"stock_code": stock_code},
+        {"stock_code": stock_code, "source": source},
         source="analysis_flow",
     )
 
