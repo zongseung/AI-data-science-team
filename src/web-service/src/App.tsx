@@ -1822,13 +1822,59 @@ function MarketPanel() {
     { name:'현대차',       code:'005380', price:'240,000', chg:'-0.62%', up:false, cap:'51조'  },
     { name:'NAVER',       code:'035420', price:'205,500', chg:'+2.14%', up:true,  cap:'34조'  },
   ]
-  const newsItems = [
-    { time:'09:12', tag:'삼성전자', tagColor:c.green, title:'삼성전자, AI 반도체 수주 대규모 확대...HBM4 양산 돌입', sentiment:'positive' as const, sentimentIcon:'▲' },
-    { time:'09:08', tag:'SK하이닉스', tagColor:c.red, title:'SK하이닉스, 2분기 실적 가이던스 하향...메모리 가격 약세', sentiment:'negative' as const, sentimentIcon:'▼' },
-    { time:'09:05', tag:'NAVER', tagColor:c.green, title:'네이버 클로바X, 일본 시장 진출 발표...글로벌 AI 경쟁 가세', sentiment:'positive' as const, sentimentIcon:'▲' },
-    { time:'08:55', tag:'현대차', tagColor:c.red, title:'현대차, 미국 관세 리스크 재부각...UAW 노조 협상 난항', sentiment:'negative' as const, sentimentIcon:'▼' },
-    { time:'08:42', tag:'삼성바이오', tagColor:c.green, title:'삼성바이오로직스, FDA 바이오시밀러 승인 기대감 ↑', sentiment:'positive' as const, sentimentIcon:'▲' },
-  ]
+
+  // 실제 KRX 뉴스 감성분석 데이터 fetch
+  const [newsItems, setNewsItems] = useState<{time:string,tag:string,tagColor:string,title:string,sentiment:'positive'|'negative'|'neutral',sentimentIcon:string,score:number,url:string}[]>([])
+  const [krxSummary, setKrxSummary] = useState<Record<string, {avg:number, label:string, count:number}>>({})
+
+  useEffect(() => {
+    let dead = false
+    async function loadKrxNews() {
+      try {
+        // 종목별 뉴스 fetch
+        const codes = ['005930','000660','035420','035720','005380']
+        const names: Record<string,string> = {'005930':'삼성전자','000660':'SK하이닉스','035420':'NAVER','035720':'카카오','005380':'현대차'}
+        const results = await Promise.all(
+          codes.map(async code => {
+            const r = await fetch(`http://localhost:8090/api/krx/sentiment/${code}?limit=5`)
+            return { code, data: await r.json() }
+          })
+        )
+        if (dead) return
+
+        const items: typeof newsItems = []
+        const summaryMap: typeof krxSummary = {}
+
+        for (const { code, data } of results) {
+          const name = names[code] ?? code
+          if (data.summary) {
+            summaryMap[code] = {
+              avg: data.summary.avg_sentiment,
+              label: data.summary.sentiment_label,
+              count: data.summary.article_count,
+            }
+          }
+          for (const a of (data.articles ?? [])) {
+            const score = a.sentiment_score ?? 0
+            const label = score >= 0.05 ? 'positive' : score <= -0.05 ? 'negative' : 'neutral'
+            const icon = label === 'positive' ? '▲' : label === 'negative' ? '▼' : '—'
+            const color = label === 'positive' ? c.green : label === 'negative' ? c.red : c.txtMut
+            const pubDate = a.published_at ? new Date(a.published_at) : new Date()
+            const timeStr = `${pubDate.getMonth()+1}/${pubDate.getDate()}`
+            items.push({ time: timeStr, tag: name, tagColor: color, title: a.title, sentiment: label, sentimentIcon: icon, score, url: a.url ?? '' })
+          }
+        }
+
+        // 최신순 정렬
+        items.sort((a, b) => b.score - a.score) // 감성점수 높은 순
+        setNewsItems(items.slice(0, 15))
+        setKrxSummary(summaryMap)
+      } catch { /* ignore */ }
+    }
+    loadKrxNews()
+    const iv = window.setInterval(loadKrxNews, 5 * 60_000)
+    return () => { dead = true; clearInterval(iv) }
+  }, [])
   return (
     <div>
       {/* Index summary - compact row */}
@@ -1868,21 +1914,45 @@ function MarketPanel() {
         ))}
       </div>
 
-      {/* Latest news */}
-      <div style={{ fontFamily:MONO, fontSize:8, color:c.txtMut, letterSpacing:2, marginTop:10, marginBottom:6 }}>LATEST NEWS</div>
-      <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+      {/* Sentiment summary per stock */}
+      {Object.keys(krxSummary).length > 0 && (<>
+        <div style={{ fontFamily:MONO, fontSize:8, color:c.txtMut, letterSpacing:2, marginTop:10, marginBottom:6 }}>NEWS SENTIMENT (TF-IDF + VADER)</div>
+        <div style={{ display:'flex', gap:6, marginBottom:8, flexWrap:'wrap' }}>
+          {Object.entries(krxSummary).map(([code, s]) => {
+            const name = {'005930':'삼성전자','000660':'SK하이닉스','035420':'NAVER','035720':'카카오','005380':'현대차'}[code] ?? code
+            const sc = s.avg
+            const color = sc >= 0.05 ? c.green : sc <= -0.05 ? c.red : c.txtMut
+            const icon = sc >= 0.05 ? '▲' : sc <= -0.05 ? '▼' : '—'
+            return (
+              <div key={code} style={{ padding:'4px 8px', border:`1px solid ${c.border}`, borderRadius:4, background:c.panel, fontFamily:MONO, fontSize:9 }}>
+                <span style={{ color:c.txtSec, fontWeight:700 }}>{name}</span>
+                <span style={{ color, marginLeft:6 }}>{icon}{sc.toFixed(3)}</span>
+                <span style={{ color:c.txtMut, marginLeft:4 }}>({s.count}건)</span>
+              </div>
+            )
+          })}
+        </div>
+      </>)}
+
+      {/* Latest news - 실제 데이터 */}
+      <div style={{ fontFamily:MONO, fontSize:8, color:c.txtMut, letterSpacing:2, marginTop:4, marginBottom:6 }}>
+        {newsItems.length > 0 ? 'LATEST NEWS (실시간)' : 'LATEST NEWS (로딩중...)'}
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:2, maxHeight:200, overflowY:'auto' }}>
         {newsItems.map((n, i) => (
-          <div key={i} style={{
+          <a key={i} href={n.url} target="_blank" rel="noopener noreferrer" style={{
             display:'flex', alignItems:'center', gap:8,
-            padding:'5px 8px',
+            padding:'5px 8px', textDecoration:'none',
             background: i%2===0 ? 'transparent' : c.panel+'66',
             borderBottom: `1px solid ${c.border}33`,
           }}>
             <span style={{ fontFamily:MONO, fontSize:8, color:c.txtMut, flexShrink:0 }}>{n.time}</span>
             <span style={{ fontFamily:MONO, fontSize:8, color:n.tagColor, background:n.tagColor+'18', padding:'0 4px', borderRadius:2, flexShrink:0 }}>{n.tag}</span>
             <span style={{ fontFamily:'Noto Sans KR,sans-serif', fontSize:10, color:c.txtSec, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{n.title}</span>
-            <span style={{ fontFamily:MONO, fontSize:9, color:n.sentiment==='positive'?c.green:n.sentiment==='negative'?c.red:c.txtMut, flexShrink:0 }}>{n.sentimentIcon}</span>
-          </div>
+            <span style={{ fontFamily:MONO, fontSize:9, color:n.sentiment==='positive'?c.green:n.sentiment==='negative'?c.red:c.txtMut, flexShrink:0, minWidth:35, textAlign:'right' }}>
+              {n.sentimentIcon}{n.score >= 0 ? '+' : ''}{n.score.toFixed(2)}
+            </span>
+          </a>
         ))}
       </div>
     </div>

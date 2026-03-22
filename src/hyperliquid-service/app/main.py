@@ -26,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .collector import HyperliquidCollector
 from .config import hl_settings
+from .krx_sentiment_task import krx_sentiment_loop, run_krx_sentiment
 from .sentiment_task import run_sentiment_analysis, sentiment_loop
 from .storage import hl_storage
 
@@ -35,6 +36,7 @@ log = logger.bind(component="hl_main")
 _collector: HyperliquidCollector | None = None
 _collector_task: asyncio.Task[None] | None = None
 _sentiment_task: asyncio.Task[None] | None = None
+_krx_sentiment_task: asyncio.Task[None] | None = None
 
 
 # ------------------------------------------------------------------
@@ -45,7 +47,7 @@ _sentiment_task: asyncio.Task[None] | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """Manage the collector and sentiment task lifecycles alongside the FastAPI app."""
-    global _collector, _collector_task, _sentiment_task
+    global _collector, _collector_task, _sentiment_task, _krx_sentiment_task
 
     _collector = HyperliquidCollector()
     _collector_task = asyncio.create_task(
@@ -59,24 +61,25 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     )
     log.info("sentiment_task_created")
 
+    # Start KRX sentiment analysis background loop
+    _krx_sentiment_task = asyncio.create_task(
+        krx_sentiment_loop(), name="hl-krx-sentiment"
+    )
+    log.info("krx_sentiment_task_created")
+
     yield  # app is running
 
     # Shutdown
     log.info("shutting_down")
     if _collector is not None:
         await _collector.stop()
-    if _collector_task is not None:
-        _collector_task.cancel()
-        try:
-            await _collector_task
-        except asyncio.CancelledError:
-            pass
-    if _sentiment_task is not None:
-        _sentiment_task.cancel()
-        try:
-            await _sentiment_task
-        except asyncio.CancelledError:
-            pass
+    for task in (_collector_task, _sentiment_task, _krx_sentiment_task):
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
     log.info("shutdown_complete")
 
 
@@ -212,6 +215,101 @@ async def trigger_sentiment_analysis() -> dict[str, object]:
         return {"status": "completed", **result}
     except Exception as exc:
         log.error("manual_sentiment_run_error", error=str(exc))
+        return {"status": "error", "error": str(exc)}
+
+
+# ------------------------------------------------------------------
+# KRX Sentiment API endpoints
+# ------------------------------------------------------------------
+
+
+@app.get("/api/krx/sentiment/summary/all")
+async def get_krx_sentiment_summary() -> dict[str, object]:
+    """Get latest KRX sentiment summary for all tracked stocks."""
+    try:
+        client = hl_storage.client
+        result = (
+            client.table("krx_sentiment_summary")
+            .select("*")
+            .order("period_start", desc=True)
+            .limit(50)
+            .execute()
+        )
+        summaries = result.data if result.data else []
+
+        # Deduplicate: keep only the latest summary per stock
+        latest: dict[str, dict] = {}
+        for s in summaries:
+            code = s.get("stock_code", "")
+            if code not in latest:
+                latest[code] = s
+
+        return {
+            "summaries": list(latest.values()),
+            "stocks": list(latest.keys()),
+        }
+    except Exception as exc:
+        log.error("krx_summary_query_error", error=str(exc))
+        return {"summaries": [], "stocks": [], "error": str(exc)}
+
+
+@app.get("/api/krx/sentiment/{stock_code}")
+async def get_krx_sentiment(stock_code: str, limit: int = 20) -> dict[str, object]:
+    """Get latest KRX news sentiment data for a stock.
+
+    Parameters
+    ----------
+    stock_code:
+        KRX stock code (e.g. 005930 for Samsung).
+    limit:
+        Maximum number of recent articles to return.
+    """
+    try:
+        client = hl_storage.client
+        result = (
+            client.table("krx_news")
+            .select("*")
+            .eq("stock_code", stock_code)
+            .order("collected_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        articles = result.data if result.data else []
+
+        # Also fetch latest summary
+        summary_result = (
+            client.table("krx_sentiment_summary")
+            .select("*")
+            .eq("stock_code", stock_code)
+            .order("period_start", desc=True)
+            .limit(1)
+            .execute()
+        )
+        summary = summary_result.data[0] if summary_result.data else None
+
+        return {
+            "stock_code": stock_code,
+            "articles": articles,
+            "summary": summary,
+        }
+    except Exception as exc:
+        log.error("krx_sentiment_query_error", stock_code=stock_code, error=str(exc))
+        return {
+            "stock_code": stock_code,
+            "articles": [],
+            "summary": None,
+            "error": str(exc),
+        }
+
+
+@app.post("/api/krx/sentiment/run")
+async def trigger_krx_sentiment_analysis() -> dict[str, object]:
+    """Manually trigger a KRX sentiment analysis run."""
+    try:
+        result = await run_krx_sentiment()
+        return {"status": "completed", **result}
+    except Exception as exc:
+        log.error("manual_krx_sentiment_run_error", error=str(exc))
         return {"status": "error", "error": str(exc)}
 
 
