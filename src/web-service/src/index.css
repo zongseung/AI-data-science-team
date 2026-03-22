@@ -1,0 +1,70 @@
+:root {
+  --bg-base: #0a0e1a;
+  --bg-panel: #0f1525;
+  --bg-card: #141b2e;
+  --bg-hover: #1a2340;
+  --border: #1e2d4a;
+  --border-bright: #2a3f6a;
+
+  --green: #00ff88;
+  --green-dim: #00cc6a;
+  --red: #ff4466;
+  --red-dim: #cc2244;
+  --gold: #ffd700;
+  --gold-dim: #b39800;
+  --blue: #4499ff;
+  --cyan: #00d4ff;
+
+  --text-primary: #e8edf5;
+  --text-secondary: #7a8caa;
+  --text-muted: #3d4f6e;
+
+  --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+  --font-kr: 'Noto Sans KR', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-kr);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 2px; }
+
+/* Ticker scroll animation */
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* Blink cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Fade in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Pulse dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.7); }
+}

@@ -8,7 +8,7 @@ import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ai_data_science_team.services.event_bus import Event, event_bus
+from utils.event_bus import Event, event_bus
 
 router = APIRouter()
 

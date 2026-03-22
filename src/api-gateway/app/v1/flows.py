@@ -7,9 +7,9 @@ the web UI or external services.
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ai_data_science_team.config.constants import STOCK_CODES
-from ai_data_science_team.flows.collection_flow import collection_flow
-from ai_data_science_team.flows.master_flow import master_flow
+from config.constants import STOCK_CODES
+from flows.collection_flow import collection_flow
+from flows.master_flow import master_flow
 
 router = APIRouter()
 
