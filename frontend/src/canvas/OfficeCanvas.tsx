@@ -1,56 +1,68 @@
 import { useEffect, useRef } from "react";
 import * as PIXI from "pixi.js";
 import { CANVAS } from "../config/layout";
-import { drawBackground } from "./drawBackground";
-import { drawFurniture } from "./drawFurniture";
-import {
-  drawRoomLabels,
-  drawHeaderLabels,
-  drawDashboardLabels,
-  drawFooterLabels,
-} from "./drawLabels";
+import { drawAllCharacters } from "./drawCharacters";
+import { drawRoomLabels, drawFooterLabels } from "./drawLabels";
+
+const DESIGN_W = CANVAS.WIDTH;
+const DESIGN_H = CANVAS.HEIGHT;
 
 export function OfficeCanvas() {
   const mountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let app: PIXI.Application;
+    let ro: ResizeObserver | null = null;
 
     (async () => {
       app = new PIXI.Application();
       await app.init({
-        width: CANVAS.WIDTH,
-        height: CANVAS.HEIGHT,
-        background: 0x0a0a12,
+        width: DESIGN_W,
+        height: DESIGN_H,
+        background: 0x2a2420,
         antialias: false,
-        resolution: window.devicePixelRatio || 1,
-        autoDensity: true,
+        resolution: 1,
       });
 
-      if (mountRef.current) {
-        mountRef.current.appendChild(app.canvas);
-      }
+      const container = mountRef.current;
+      if (!container) return;
+      container.appendChild(app.canvas);
 
-      // 배경 (방·타일·복도·헤더·푸터·대시보드)
-      const bgGfx = new PIXI.Graphics();
-      app.stage.addChild(bgGfx);
-      drawBackground(bgGfx);
+      // ── 배경 이미지 (office-room.png) ──────────────────────────────────
+      const bgTexture = await PIXI.Assets.load("/office-room.png");
+      const bg = new PIXI.Sprite(bgTexture);
+      bg.width = DESIGN_W;
+      bg.height = DESIGN_H;
+      app.stage.addChild(bg);
 
-      // 가구
-      const furnitureGfx = new PIXI.Graphics();
-      app.stage.addChild(furnitureGfx);
-      drawFurniture(furnitureGfx);
+      // ── 캐릭터 오버레이 ────────────────────────────────────────────────
+      const charGfx = new PIXI.Graphics();
+      app.stage.addChild(charGfx);
+      drawAllCharacters(charGfx);
 
-      // 텍스트 레이블
+      // ── 라벨 오버레이 ──────────────────────────────────────────────────
       const labelContainer = new PIXI.Container();
       app.stage.addChild(labelContainer);
       drawRoomLabels(labelContainer);
-      drawHeaderLabels(labelContainer);
-      drawDashboardLabels(labelContainer);
       drawFooterLabels(labelContainer);
+
+      // ── 반응형 스케일링 ────────────────────────────────────────────────
+      function resize() {
+        if (!container) return;
+        const cw = container.clientWidth;
+        const ch = container.clientHeight;
+        const scale = Math.min(cw / DESIGN_W, ch / DESIGN_H);
+        app.renderer.resize(DESIGN_W * scale, DESIGN_H * scale);
+        app.stage.scale.set(scale);
+      }
+
+      ro = new ResizeObserver(resize);
+      ro.observe(container);
+      resize();
     })();
 
     return () => {
+      ro?.disconnect();
       app?.destroy(true);
     };
   }, []);
@@ -59,9 +71,9 @@ export function OfficeCanvas() {
     <div
       ref={mountRef}
       style={{
-        display: "inline-block",
+        width: "100%",
+        height: "100%",
         imageRendering: "pixelated",
-        border: "1px solid #222233",
       }}
     />
   );
